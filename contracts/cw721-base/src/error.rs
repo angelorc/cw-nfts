@@ -17,4 +17,22 @@ pub enum ContractError {
 
     #[error("Approval not found for: {spender}")]
     ApprovalNotFound { spender: String },
+
+    #[error("Creators list must be at least 1")]
+    CreatorsTooShort {},
+    
+    #[error("Creators list too long")]
+    CreatorsTooLong {},
+
+    #[error("Creators must be at least one if set")]
+    CreatorsMustBeAtleastOne {},
+
+    #[error("Basis points in seller fee cannot exceed 10000")]
+    SellerFeeBasisPointsTooHigh {},
+
+    #[error("Creator shares must sum to 100")]
+    CreatorShareTotalMustBe100 {},
+
+    #[error("No duplicate creator addresses allowed")]
+    DuplicateCreatorAddress {},
 }

@@ -12,6 +12,12 @@
     },
     "symbol": {
       "type": "string"
+    },
+    "uri": {
+      "type": [
+        "string",
+        "null"
+      ]
     }
   },
   "additionalProperties": false

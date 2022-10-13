@@ -5,13 +5,13 @@ use cosmwasm_std::{
     to_binary, Addr, CosmosMsg, CustomMsg, QuerierWrapper, StdResult, WasmMsg, WasmQuery,
 };
 use cw721::{
-    AllNftInfoResponse, Approval, ApprovalResponse, ApprovalsResponse, ContractInfoResponse,
-    NftInfoResponse, NumTokensResponse, OperatorsResponse, OwnerOfResponse, TokensResponse,
+    Approval, ApprovalResponse, ApprovalsResponse, ContractInfoResponse,
+    NumTokensResponse, OperatorsResponse, OwnerOfResponse, TokensResponse,
 };
 use serde::de::DeserializeOwned;
 use serde::Serialize;
 
-use crate::{ExecuteMsg, QueryMsg};
+use crate::{ExecuteMsg, QueryMsg, state::AllNftInfoResponse,  state::NftInfoResponse};
 
 #[cw_serde]
 pub struct Cw721Contract<Q: CustomMsg, E: CustomMsg>(

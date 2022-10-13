@@ -4,15 +4,94 @@ use serde::Serialize;
 use cosmwasm_std::{to_binary, Addr, Binary, BlockInfo, Deps, Env, Order, StdError, StdResult};
 
 use cw721::{
-    AllNftInfoResponse, ApprovalResponse, ApprovalsResponse, ContractInfoResponse, CustomMsg,
-    Cw721Query, Expiration, NftInfoResponse, NumTokensResponse, OperatorsResponse, OwnerOfResponse,
-    TokensResponse,
+    ApprovalResponse, ApprovalsResponse, ContractInfoResponse, CustomMsg,
+    Expiration,NumTokensResponse, OperatorsResponse, OwnerOfResponse,
+    TokensResponse, Cw721Execute,
 };
 use cw_storage_plus::Bound;
 use cw_utils::maybe_addr;
 
 use crate::msg::{MinterResponse, QueryMsg};
-use crate::state::{Approval, Cw721Contract, TokenInfo};
+use crate::state::{Approval, Cw721Contract, TokenInfo, NftInfoResponse, AllNftInfoResponse};
+
+pub trait Cw721<T, C>: Cw721Execute<T, C> + Cw721Query<T>
+where
+    T: Serialize + DeserializeOwned + Clone,
+    C: CustomMsg,
+{
+}
+
+pub trait Cw721Query<T>
+where
+    T: Serialize + DeserializeOwned + Clone,
+{
+    // TODO: use custom error?
+    // How to handle the two derived error types?
+
+    fn contract_info(&self, deps: Deps) -> StdResult<ContractInfoResponse>;
+
+    fn num_tokens(&self, deps: Deps) -> StdResult<NumTokensResponse>;
+
+    fn nft_info(&self, deps: Deps, token_id: String) -> StdResult<NftInfoResponse<T>>;
+
+    fn owner_of(
+        &self,
+        deps: Deps,
+        env: Env,
+        token_id: String,
+        include_expired: bool,
+    ) -> StdResult<OwnerOfResponse>;
+
+    fn operators(
+        &self,
+        deps: Deps,
+        env: Env,
+        owner: String,
+        include_expired: bool,
+        start_after: Option<String>,
+        limit: Option<u32>,
+    ) -> StdResult<OperatorsResponse>;
+
+    fn approval(
+        &self,
+        deps: Deps,
+        env: Env,
+        token_id: String,
+        spender: String,
+        include_expired: bool,
+    ) -> StdResult<ApprovalResponse>;
+
+    fn approvals(
+        &self,
+        deps: Deps,
+        env: Env,
+        token_id: String,
+        include_expired: bool,
+    ) -> StdResult<ApprovalsResponse>;
+
+    fn tokens(
+        &self,
+        deps: Deps,
+        owner: String,
+        start_after: Option<String>,
+        limit: Option<u32>,
+    ) -> StdResult<TokensResponse>;
+
+    fn all_tokens(
+        &self,
+        deps: Deps,
+        start_after: Option<String>,
+        limit: Option<u32>,
+    ) -> StdResult<TokensResponse>;
+
+    fn all_nft_info(
+        &self,
+        deps: Deps,
+        env: Env,
+        token_id: String,
+        include_expired: bool,
+    ) -> StdResult<AllNftInfoResponse<T>>;
+}
 
 const DEFAULT_LIMIT: u32 = 10;
 const MAX_LIMIT: u32 = 100;
@@ -35,8 +114,13 @@ where
 
     fn nft_info(&self, deps: Deps, token_id: String) -> StdResult<NftInfoResponse<T>> {
         let info = self.tokens.load(deps.storage, &token_id)?;
+
         Ok(NftInfoResponse {
             token_uri: info.token_uri,
+            seller_fee_basis_points: info.seller_fee_basis_points,
+            primary_sale_happened: info.primary_sale_happened,
+            creators: info.creators,
+            master_edition_info: info.master_edition_info,
             extension: info.extension,
         })
     }
@@ -201,6 +285,10 @@ where
             },
             info: NftInfoResponse {
                 token_uri: info.token_uri,
+                seller_fee_basis_points: info.seller_fee_basis_points,
+                primary_sale_happened: info.primary_sale_happened,
+                creators: info.creators,
+                master_edition_info: info.master_edition_info,
                 extension: info.extension,
             },
         })

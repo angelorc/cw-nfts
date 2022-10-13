@@ -1,19 +1,23 @@
 #![cfg(test)]
 use cosmwasm_std::testing::{mock_dependencies, mock_env, mock_info};
-use cosmwasm_std::{from_binary, to_binary, CosmosMsg, DepsMut, Empty, Response, WasmMsg};
+use cosmwasm_std::{from_binary, to_binary, CosmosMsg, DepsMut, Empty, Response, WasmMsg, Addr};
 
 use cw721::{
-    Approval, ApprovalResponse, ContractInfoResponse, Cw721Query, Cw721ReceiveMsg, Expiration,
-    NftInfoResponse, OperatorsResponse, OwnerOfResponse,
+    Approval, ApprovalResponse, ContractInfoResponse, Cw721ReceiveMsg, Expiration,
+    OperatorsResponse, OwnerOfResponse,
 };
 
+use crate::msg::CreatorInfoMsg;
+use crate::query::Cw721Query;
 use crate::{
     ContractError, Cw721Contract, ExecuteMsg, Extension, InstantiateMsg, MintMsg, QueryMsg,
 };
+use crate::state::{NftInfoResponse, CreatorInfo, MasterEditionInfo};
 
 const MINTER: &str = "merlin";
 const CONTRACT_NAME: &str = "Magic Power";
 const SYMBOL: &str = "MGK";
+const URI: &str = "ipfs://...";
 
 fn setup_contract(deps: DepsMut<'_>) -> Cw721Contract<'static, Extension, Empty, Empty, Empty> {
     let contract = Cw721Contract::default();
@@ -21,6 +25,7 @@ fn setup_contract(deps: DepsMut<'_>) -> Cw721Contract<'static, Extension, Empty,
         name: CONTRACT_NAME.to_string(),
         symbol: SYMBOL.to_string(),
         minter: String::from(MINTER),
+        uri: Some(URI.to_string()),
     };
     let info = mock_info("creator", &[]);
     let res = contract.instantiate(deps, mock_env(), info, msg).unwrap();
@@ -37,6 +42,7 @@ fn proper_instantiation() {
         name: CONTRACT_NAME.to_string(),
         symbol: SYMBOL.to_string(),
         minter: String::from(MINTER),
+        uri: Some(URI.to_string()),
     };
     let info = mock_info("creator", &[]);
 
@@ -52,10 +58,7 @@ fn proper_instantiation() {
     let info = contract.contract_info(deps.as_ref()).unwrap();
     assert_eq!(
         info,
-        ContractInfoResponse {
-            name: CONTRACT_NAME.to_string(),
-            symbol: SYMBOL.to_string(),
-        }
+        ContractInfoResponse {name:CONTRACT_NAME.to_string(),symbol:SYMBOL.to_string(), uri: Some(URI.to_string()) }
     );
 
     let count = contract.num_tokens(deps.as_ref()).unwrap();
@@ -76,8 +79,13 @@ fn minting() {
 
     let mint_msg = ExecuteMsg::Mint(MintMsg::<Extension> {
         token_id: token_id.clone(),
-        owner: String::from("medusa"),
         token_uri: Some(token_uri.clone()),
+        owner: String::from("medusa"),
+        seller_fee: 1,
+        creators_info: vec![CreatorInfoMsg {
+            share: 1,
+            address: "test".to_string(),
+        }],
         extension: None,
     });
 
@@ -110,6 +118,17 @@ fn minting() {
         NftInfoResponse::<Extension> {
             token_uri: Some(token_uri),
             extension: None,
+            creators: vec![CreatorInfo {
+                verified: false,
+                share: 1,
+                address: Addr::unchecked("test"),
+            }],
+            master_edition_info: MasterEditionInfo {
+                max_supply: Some(0),
+                supply: 1,
+            },
+            primary_sale_happened: false,
+            seller_fee_basis_points: 1
         }
     );
 
@@ -131,6 +150,8 @@ fn minting() {
         owner: String::from("hercules"),
         token_uri: None,
         extension: None,
+        seller_fee: 1,
+        creators_info: vec![],
     });
 
     let allowed = mock_info(MINTER, &[]);
@@ -158,6 +179,8 @@ fn burning() {
         owner: MINTER.to_string(),
         token_uri: Some(token_uri),
         extension: None,
+        creators_info: vec![],
+        seller_fee: 1,
     });
 
     let burn_msg = ExecuteMsg::Burn { token_id };
@@ -208,6 +231,8 @@ fn transferring_nft() {
         owner: String::from("venus"),
         token_uri: Some(token_uri),
         extension: None,
+        creators_info: vec![],
+        seller_fee: 1,
     });
 
     let minter = mock_info(MINTER, &[]);
@@ -262,6 +287,8 @@ fn sending_nft() {
         owner: String::from("venus"),
         token_uri: Some(token_uri),
         extension: None,
+        creators_info: vec![],
+        seller_fee: 1,
     });
 
     let minter = mock_info(MINTER, &[]);
@@ -328,6 +355,8 @@ fn approving_revoking() {
         owner: String::from("demeter"),
         token_uri: Some(token_uri),
         extension: None,
+        creators_info: vec![],
+        seller_fee: 1,
     });
 
     let minter = mock_info(MINTER, &[]);
@@ -475,6 +504,8 @@ fn approving_all_revoking_all() {
         owner: String::from("demeter"),
         token_uri: Some(token_uri1),
         extension: None,
+        creators_info: vec![],
+        seller_fee: 1,
     });
 
     let minter = mock_info(MINTER, &[]);
@@ -487,6 +518,8 @@ fn approving_all_revoking_all() {
         owner: String::from("demeter"),
         token_uri: Some(token_uri2),
         extension: None,
+        creators_info: vec![],
+        seller_fee: 1,
     });
 
     contract
@@ -691,6 +724,8 @@ fn query_tokens_by_owner() {
         owner: demeter.clone(),
         token_uri: None,
         extension: None,
+        creators_info: vec![],
+        seller_fee: 1,
     });
     contract
         .execute(deps.as_mut(), mock_env(), minter.clone(), mint_msg)
@@ -701,6 +736,8 @@ fn query_tokens_by_owner() {
         owner: ceres.clone(),
         token_uri: None,
         extension: None,
+        creators_info: vec![],
+        seller_fee: 1,
     });
     contract
         .execute(deps.as_mut(), mock_env(), minter.clone(), mint_msg)
@@ -711,6 +748,8 @@ fn query_tokens_by_owner() {
         owner: demeter.clone(),
         token_uri: None,
         extension: None,
+        creators_info: vec![],
+        seller_fee: 1,
     });
     contract
         .execute(deps.as_mut(), mock_env(), minter, mint_msg)

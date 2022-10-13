@@ -8,11 +8,14 @@ use cw721::{ContractInfoResponse, CustomMsg, Cw721Execute, Cw721ReceiveMsg, Expi
 
 use crate::error::ContractError;
 use crate::msg::{ExecuteMsg, InstantiateMsg, MintMsg};
-use crate::state::{Approval, Cw721Contract, TokenInfo};
+use crate::state::{Approval, Cw721Contract, TokenInfo, MasterEditionInfo, CreatorInfo};
 
 // Version info for migration
 const CONTRACT_NAME: &str = "crates.io:cw721-base";
 const CONTRACT_VERSION: &str = env!("CARGO_PKG_VERSION");
+
+const MAX_CREATOR_LIMIT: usize = 5;
+const MAX_SELLER_FEE: u16 = 10000;
 
 impl<'a, T, C, E, Q> Cw721Contract<'a, T, C, E, Q>
 where
@@ -98,16 +101,63 @@ where
             return Err(ContractError::Unauthorized {});
         }
 
+        if msg.creators_info.len() < 1 {
+            return Err(ContractError::CreatorsTooShort {  })
+        }
+
+        // Check max seller fee
+        if msg.seller_fee > MAX_SELLER_FEE {
+            return Err(ContractError::SellerFeeBasisPointsTooHigh { })
+        }
+
+        // Check max share and duplicated creators
+        // TODO: improve check duplicated creators
+        let mut total_share: u8 = 0;
+        for i in 0..msg.creators_info.len() {
+            let creator = &msg.creators_info[i];
+            for iter in msg.creators_info.iter().skip(i + 1) {
+                if iter.address == creator.address {
+                    return Err(ContractError::DuplicateCreatorAddress {  })
+                }
+            }
+            total_share = total_share
+                .checked_add(creator.share)
+                .ok_or(ContractError::CreatorShareTotalMustBe100 {  })?
+        }
+        if total_share != 100 {
+            return Err(ContractError::CreatorShareTotalMustBe100 { });
+        }
+
+        // Check max creators
+        if msg.creators_info.len() > MAX_CREATOR_LIMIT {
+            return Err(ContractError::CreatorsTooLong {  })
+        }
+
+        // convert creators
+        let creators_info: Vec<CreatorInfo> = msg.creators_info
+            .into_iter()
+            .map(|creator_msg|  CreatorInfo {
+                address: deps.api.addr_validate(&creator_msg.address).unwrap(),
+                share: creator_msg.share,
+                verified: false,
+            })
+            .collect();
+
         // create the token
         let token = TokenInfo {
             owner: deps.api.addr_validate(&msg.owner)?,
             approvals: vec![],
             token_uri: msg.token_uri,
             extension: msg.extension,
-            creators: msg.creators_info, // TODO: iterate
-            master_edition_info: todo!(),
+            creators: creators_info, // TODO: check address is valid
             primary_sale_happened: false,
+            seller_fee_basis_points: msg.seller_fee,
+            master_edition_info: MasterEditionInfo {
+                supply: 1,
+                max_supply: Some(0),
+            },
         };
+
         self.tokens
             .update(deps.storage, &msg.token_id, |old| match old {
                 Some(_) => Err(ContractError::Claimed {}),

@@ -19,6 +19,12 @@
     "symbol": {
       "description": "Symbol of the NFT contract",
       "type": "string"
+    },
+    "uri": {
+      "type": [
+        "string",
+        "null"
+      ]
     }
   },
   "additionalProperties": false

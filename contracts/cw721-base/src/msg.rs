@@ -1,8 +1,6 @@
 use cosmwasm_schema::cw_serde;
-use cosmwasm_std::{Binary, Decimal};
+use cosmwasm_std::{Binary};
 use cw721::Expiration;
-
-use crate::state::{CreatorInfo, MasterEditionInfo};
 
 #[cw_serde]
 pub struct InstantiateMsg {
@@ -62,6 +60,14 @@ pub enum ExecuteMsg<T, E> {
 }
 
 #[cw_serde]
+pub struct CreatorInfoMsg {
+    pub address: String,
+
+    // In percentages, NOT basis points ;) Watch out!
+    pub share: u8,
+}
+
+#[cw_serde]
 pub struct MintMsg<T> {
     /// Unique ID of the NFT
     pub token_id: String,
@@ -71,16 +77,13 @@ pub struct MintMsg<T> {
     /// Should point to a JSON file that conforms to the ERC721
     /// Metadata JSON Schema
     pub token_uri: Option<String>,
+
+    pub seller_fee: u16,
+
+    pub creators_info: Vec<CreatorInfoMsg>,
+
     /// Any custom extension used by this contract
     pub extension: T,
-
-    pub seller_fee: Decimal,
-
-    pub primary_sale_happened: bool,
-
-    pub creators_info: Vec<CreatorInfo>,
-
-    pub master_edition_info: MasterEditionInfo,
 }
 
 #[cw_serde]

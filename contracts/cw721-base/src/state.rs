@@ -2,11 +2,14 @@ use schemars::JsonSchema;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use std::marker::PhantomData;
+use cosmwasm_schema::cw_serde;
 
-use cosmwasm_std::{Addr, BlockInfo, StdResult, Storage, Decimal, Uint128};
+use cosmwasm_std::{Addr, BlockInfo, StdResult, Storage};
 
-use cw721::{ContractInfoResponse, CustomMsg, Cw721, Expiration};
+use cw721::{ContractInfoResponse, CustomMsg, Expiration, OwnerOfResponse};
 use cw_storage_plus::{Index, IndexList, IndexedMap, Item, Map, MultiIndex};
+
+use crate::query::Cw721;
 
 pub struct Cw721Contract<'a, T, C, E, Q>
 where
@@ -102,17 +105,18 @@ where
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub struct CreatorInfo {
-    pub address: String,
+    pub address: Addr,
 
     pub verified: bool,
 
-    pub share: Decimal,
+    /// In percentages, NOT basis points ;) Watch out!
+    pub share: u8,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub struct MasterEditionInfo {
-    pub supply: Uint128,
-    pub max_supply: Uint128,
+    pub supply: u64,
+    pub max_supply: Option<u64>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
@@ -128,7 +132,7 @@ pub struct TokenInfo<T> {
     pub token_uri: Option<String>,
 
     // Royalty that goes to creators in secondary sales
-    pub seller_fee: Decimal,
+    pub seller_fee_basis_points: u16,
 
     // Immutable, once flipped, all sales of this metadata are considered secondary.
     pub primary_sale_happened: bool,
@@ -140,6 +144,36 @@ pub struct TokenInfo<T> {
 
     /// You can add any custom metadata here when you extend cw721-base
     pub extension: T,
+}
+
+#[cw_serde]
+pub struct NftInfoResponse<T> {
+    /// Universal resource identifier for this NFT
+    /// Should point to a JSON file that conforms to the ERC721
+    /// Metadata JSON Schema
+    pub token_uri: Option<String>,
+
+    // Royalty that goes to creators in secondary sales
+    pub seller_fee_basis_points: u16,
+
+    // Immutable, once flipped, all sales of this metadata are considered secondary.
+    pub primary_sale_happened: bool,
+
+    // Creator list
+    pub creators: Vec<CreatorInfo>,
+
+    pub master_edition_info: MasterEditionInfo,
+
+    /// You can add any custom metadata here when you extend cw721-base
+    pub extension: T,
+}
+
+#[cw_serde]
+pub struct AllNftInfoResponse<T> {
+    /// Who can transfer the token
+    pub access: OwnerOfResponse,
+    /// Data on the token itself,
+    pub info: NftInfoResponse<T>,
 }
 
 #[derive(Serialize, Deserialize, Clone, PartialEq, JsonSchema, Debug)]
