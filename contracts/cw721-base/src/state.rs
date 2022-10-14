@@ -114,12 +114,6 @@ pub struct CreatorInfo {
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
-pub struct MasterEditionInfo {
-    pub supply: u64,
-    pub max_supply: Option<u64>,
-}
-
-#[derive(Serialize, Deserialize, Clone, Debug, PartialEq, JsonSchema)]
 pub struct TokenInfo<T> {
     /// The owner of the newly minted NFT
     pub owner: Addr,
@@ -139,8 +133,6 @@ pub struct TokenInfo<T> {
 
     // Creator list
     pub creators: Vec<CreatorInfo>,
-
-    pub master_edition_info: MasterEditionInfo,
 
     /// You can add any custom metadata here when you extend cw721-base
     pub extension: T,
