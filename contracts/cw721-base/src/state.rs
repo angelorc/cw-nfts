@@ -154,8 +154,6 @@ pub struct NftInfoResponse<T> {
     // Creator list
     pub creators: Vec<CreatorInfo>,
 
-    pub master_edition_info: MasterEditionInfo,
-
     /// You can add any custom metadata here when you extend cw721-base
     pub extension: T,
 }

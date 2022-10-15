@@ -120,7 +120,6 @@ where
             seller_fee_basis_points: info.seller_fee_basis_points,
             primary_sale_happened: info.primary_sale_happened,
             creators: info.creators,
-            master_edition_info: info.master_edition_info,
             extension: info.extension,
         })
     }
@@ -288,7 +287,6 @@ where
                 seller_fee_basis_points: info.seller_fee_basis_points,
                 primary_sale_happened: info.primary_sale_happened,
                 creators: info.creators,
-                master_edition_info: info.master_edition_info,
                 extension: info.extension,
             },
         })

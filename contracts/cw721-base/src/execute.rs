@@ -8,7 +8,7 @@ use cw721::{ContractInfoResponse, CustomMsg, Cw721Execute, Cw721ReceiveMsg, Expi
 
 use crate::error::ContractError;
 use crate::msg::{ExecuteMsg, InstantiateMsg, MintMsg};
-use crate::state::{Approval, Cw721Contract, TokenInfo, MasterEditionInfo, CreatorInfo};
+use crate::state::{Approval, Cw721Contract, TokenInfo, CreatorInfo};
 
 // Version info for migration
 const CONTRACT_NAME: &str = "crates.io:cw721-base";
@@ -152,10 +152,6 @@ where
             creators: creators_info, // TODO: check address is valid
             primary_sale_happened: false,
             seller_fee_basis_points: msg.seller_fee,
-            master_edition_info: MasterEditionInfo {
-                supply: 1,
-                max_supply: Some(0),
-            },
         };
 
         self.tokens

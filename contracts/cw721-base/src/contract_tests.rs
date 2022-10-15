@@ -12,7 +12,7 @@ use crate::query::Cw721Query;
 use crate::{
     ContractError, Cw721Contract, ExecuteMsg, Extension, InstantiateMsg, MintMsg, QueryMsg,
 };
-use crate::state::{NftInfoResponse, CreatorInfo, MasterEditionInfo};
+use crate::state::{NftInfoResponse, CreatorInfo};
 
 const MINTER: &str = "merlin";
 const CONTRACT_NAME: &str = "Magic Power";
@@ -123,10 +123,6 @@ fn minting() {
                 share: 1,
                 address: Addr::unchecked("test"),
             }],
-            master_edition_info: MasterEditionInfo {
-                max_supply: Some(0),
-                supply: 1,
-            },
             primary_sale_happened: false,
             seller_fee_basis_points: 1
         }

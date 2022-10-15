@@ -1,4 +1,4 @@
-use cosmwasm_std::{Addr, Coin, Timestamp};
+use cosmwasm_std::{Addr, Coin};
 use cw_storage_plus::{Item, Map};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -14,11 +14,10 @@ pub struct Config {
     pub base_token_uri: String,
     pub nft_limit: u32,
     pub limit_per_address: u64,
-    pub start_time: Timestamp,
 }
 
 pub const CONFIG: Item<Config> = Item::new("config");
-pub const NFT_ADDRESS: Item<Addr> = Item::new("nft_address");
+pub const NFT_ADDRESS: Item<Option<Addr>> = Item::new("nft_address");
 pub const MINTABLE_TOKEN_POSITIONS: Map<u32, u32> = Map::new("mt");
 pub const MINTABLE_NFT_LIMIT: Item<u32> = Item::new("mintable_nft_limit");
 pub const MINTER_ADDRS: Map<&Addr, u32> = Map::new("ma");
