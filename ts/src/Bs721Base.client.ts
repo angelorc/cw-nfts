@@ -6,7 +6,7 @@
 
 import { Coin, StdFee } from "@cosmjs/amino";
 import { SigningCosmWasmClient, ExecuteResult } from "@cosmjs/cosmwasm-stargate";
-import { Expiration, Timestamp, Uint64, AllNftInfoResponse, OwnerOfResponse, Approval, NftInfoResponseForNullable_Empty, Empty, ApprovalResponse, ApprovalsResponse, ContractInfoResponse, ExecuteMsg, Binary, MintMsgForNullable_Empty, InstantiateMsg, MinterResponse, NftInfoResponse, NumTokensResponse, OperatorsResponse, QueryMsgForEmpty, TokensResponse } from "./Bs721Base.types";
+import { Expiration, Timestamp, Uint64, Addr, AllNftInfoResponse, OwnerOfResponse, Approval, NftInfoResponseForNullable_Empty, Empty, ApprovalResponse, ApprovalsResponse, ContractInfoResponse, ExecuteMsg, Binary, MintMsgForNullable_Empty, InstantiateMsg, MinterResponse, NftInfoResponse, NumTokensResponse, OperatorsResponse, QueryMsgForEmpty, TokensResponse } from "./Bs721Base.types";
 export interface Bs721BaseInterface {
   contractAddress: string;
   sender: string;

@@ -5,10 +5,10 @@ use cosmwasm_schema::{export_schema, export_schema_with_title, remove_schemas, s
 use cosmwasm_std::Empty;
 
 use cw721::{
-    AllNftInfoResponse, ApprovalResponse, ApprovalsResponse, ContractInfoResponse, NftInfoResponse,
+    ApprovalResponse, ApprovalsResponse, ContractInfoResponse,
     NumTokensResponse, OperatorsResponse, OwnerOfResponse, TokensResponse,
 };
-use bs721_base::{ExecuteMsg, Extension, InstantiateMsg, MinterResponse, QueryMsg};
+use bs721_base::{ExecuteMsg, Extension, InstantiateMsg, MinterResponse, QueryMsg, state::{NftInfoResponse, AllNftInfoResponse} };
 
 fn main() {
     let mut out_dir = current_dir().unwrap();

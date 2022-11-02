@@ -8,7 +8,7 @@ import { Coin } from "@cosmjs/amino";
 import { MsgExecuteContractEncodeObject } from "cosmwasm";
 import { MsgExecuteContract } from "cosmjs-types/cosmwasm/wasm/v1/tx";
 import { toUtf8 } from "@cosmjs/encoding";
-import { Expiration, Timestamp, Uint64, AllNftInfoResponse, OwnerOfResponse, Approval, NftInfoResponseForNullable_Empty, Empty, ApprovalResponse, ApprovalsResponse, ContractInfoResponse, ExecuteMsg, Binary, MintMsgForNullable_Empty, InstantiateMsg, MinterResponse, NftInfoResponse, NumTokensResponse, OperatorsResponse, QueryMsgForEmpty, TokensResponse } from "./Bs721Base.types";
+import { Expiration, Timestamp, Uint64, Addr, AllNftInfoResponse, OwnerOfResponse, Approval, NftInfoResponseForNullable_Empty, Empty, ApprovalResponse, ApprovalsResponse, ContractInfoResponse, ExecuteMsg, Binary, MintMsgForNullable_Empty, InstantiateMsg, MinterResponse, NftInfoResponse, NumTokensResponse, OperatorsResponse, QueryMsgForEmpty, TokensResponse } from "./Bs721Base.types";
 export interface Bs721BaseMessage {
   contractAddress: string;
   sender: string;

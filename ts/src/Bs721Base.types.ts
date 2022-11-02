@@ -13,6 +13,7 @@ export type Expiration = {
 };
 export type Timestamp = Uint64;
 export type Uint64 = string;
+export type Addr = string;
 export interface AllNftInfoResponse {
   access: OwnerOfResponse;
   info: NftInfoResponseForNullable_Empty;
@@ -27,6 +28,9 @@ export interface Approval {
 }
 export interface NftInfoResponseForNullable_Empty {
   extension?: Empty | null;
+  payment_address?: Addr | null;
+  primary_sale_happened: boolean;
+  seller_fee_basis_points: number;
   token_uri?: string | null;
 }
 export interface Empty {
@@ -105,6 +109,9 @@ export interface MinterResponse {
 }
 export interface NftInfoResponse {
   extension?: Empty | null;
+  payment_address?: Addr | null;
+  primary_sale_happened: boolean;
+  seller_fee_basis_points: number;
   token_uri?: string | null;
 }
 export interface NumTokensResponse {
