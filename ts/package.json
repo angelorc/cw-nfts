@@ -1,0 +1,19 @@
+{
+  "name": "@bitsongjs/bs-nfts-ts",
+  "version": "0.1.0",
+  "description": "BS NFTs CosmWasm typescript types",
+  "main": "index.js",
+  "scripts": {
+    "codegen": "ts-node codegen.ts"
+  },
+  "author": "Angelo Recca",
+  "license": "MIT",
+  "dependencies": {
+    "@cosmjs/amino": "^0.29.3",
+    "@cosmjs/cosmwasm-stargate": "^0.29.3",
+    "@cosmwasm/ts-codegen": "^0.20.0",
+    "cosmwasm": "^1.1.1",
+    "ts-node": "^10.9.1",
+    "typescript": "^4.8.4"
+  }
+}
