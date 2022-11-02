@@ -1,15 +1,20 @@
 [workspace]
 members = ["packages/*", "contracts/*"]
+resolver = "2"
 
-[profile.release.package.cw721-base]
+[profile.release.package.bs721-base]
 codegen-units = 1
 incremental = false
 
-[profile.release.package.cw721-metadata-onchain]
+[profile.release.package.bs721-royalty]
 codegen-units = 1
 incremental = false
 
-[profile.release.package.cw721-fixed-price]
+[profile.release.package.cw4-group]
+codegen-units = 1
+incremental = false
+
+[profile.release.package.bs721-launchpad]
 codegen-units = 1
 incremental = false
 
@@ -20,3 +25,18 @@ overflow-checks = true
 opt-level = 3
 debug = false
 debug-assertions = false
+
+[workspace.dependencies]
+cosmwasm-schema = "1.1.0"
+cosmwasm-std = "1.1.4"
+cw-utils = "0.15.0"
+cw2 = "0.15.0"
+cw4 = "0.15.0"
+cw721 = { path = "packages/cw721", version = "0.15.0" }
+bs721-base = { path = "contracts/bs721-base", version = "0.1.0" }
+cw-storage-plus = "0.15.0"
+schemars = "0.8.10"
+serde = { version = "1.0.140", default-features = false, features = ["derive"] }
+thiserror = "1.0.31"
+url = "2.2.0"
+prost = "0.10.4"
