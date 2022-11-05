@@ -108,43 +108,6 @@ where
             return Err(ContractError::SellerFeeBasisPointsTooHigh { })
         }
         
-        /*
-        if msg.creators_info.len() < 1 {
-            return Err(ContractError::CreatorsTooShort {  })
-        }
-        // Check max share and duplicated creators
-        // TODO: improve check duplicated creators
-        let mut total_share: u8 = 0;
-        for i in 0..msg.creators_info.len() {
-            let creator = &msg.creators_info[i];
-            for iter in msg.creators_info.iter().skip(i + 1) {
-                if iter.address == creator.address {
-                    return Err(ContractError::DuplicateCreatorAddress {  })
-                }
-            }
-            total_share = total_share
-                .checked_add(creator.share)
-                .ok_or(ContractError::CreatorShareTotalMustBe100 {  })?
-        }
-        if total_share != 100 {
-            return Err(ContractError::CreatorShareTotalMustBe100 { });
-        }
-
-        // Check max creators
-        if msg.creators_info.len() > MAX_CREATOR_LIMIT {
-            return Err(ContractError::CreatorsTooLong {  })
-        }
-
-        // convert creators
-        let creators_info: Vec<CreatorInfo> = msg.creators_info
-            .into_iter()
-            .map(|creator_msg|  CreatorInfo {
-                address: deps.api.addr_validate(&creator_msg.address).unwrap(),
-                share: creator_msg.share,
-                verified: false,
-            })
-            .collect();*/
-
         // create the token
         let token = TokenInfo {
             owner: deps.api.addr_validate(&msg.owner)?,

@@ -33,6 +33,24 @@ pub enum ContractError {
     #[error("Basis points in seller fee cannot exceed 10000")]
     SellerFeeBasisPointsTooHigh {},
 
-    #[error("Collection is sold out!")]
-    CollectionSoldOut {},
+    #[error("Stage is sold out!")]
+    StageSoldOut {},
+
+    #[error("No active stages!")]
+    NoActiveStages {},
+
+    #[error("Start date must be greater then current time")]
+    StageStartDate {},
+
+    #[error("End date must be greater then start time")]
+    StageEndDate {},
+
+    #[error("Max supply must be greater then zero")]
+    StageInvalidMaxSupply {},
+
+    #[error("Invalid stage price, must be greater then zero")]
+    StageInvalidPrice {},
+
+    #[error("Invalid date")]
+    InvalidDate {},
 }
