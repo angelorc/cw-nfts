@@ -15,17 +15,8 @@ pub enum ContractError {
     #[error("Instantiate contract error")]
     InstantiateContractError {},
 
-    // #[error("InvalidUnitPrice")]
-    // InvalidUnitPrice {},
-
-    // #[error("InvalidNftLimit")]
-    // InvalidNftLimit {},
-
     #[error("BS721AlreadyLinked")]
     BS721AlreadyLinked {},
-
-    // #[error("MaxLimitAddressReached")]
-    // MaxLimitAddressReached {},
 
     #[error("IncorrectPaymentAmount {0} != {1}")]
     IncorrectPaymentAmount(Coin, Coin),
@@ -50,4 +41,10 @@ pub enum ContractError {
 
     #[error("Stage invalid supply")]
     StageInvalidSupply {},
+
+    #[error("Wrong length")]
+    WrongLength {},
+
+    #[error("Verification failed")]
+    VerificationFailed {},
 }

@@ -30,7 +30,7 @@ pub struct InstantiateMsg {
 pub enum ExecuteMsg {
     Mint {
         stage: u8,
-        proofs: Option<Vec<String>>,
+        proofs: Vec<String>,
     },
     // AddStage,
     // PauseStage,

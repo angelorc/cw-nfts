@@ -1,15 +1,13 @@
 use crate::error::ContractError;
-use crate::msg::{InstantiateMsg, ConfigResponse, QueryMsg, ExecuteMsg, StageResponse, Stage};
+use crate::helpers::{map_stages, random_nft_list, pick_random_nft};
+use crate::msg::{InstantiateMsg, ConfigResponse, QueryMsg, ExecuteMsg};
 use crate::state::{Config, CONFIG, NFT_ADDRESS, SEED, NFT_POSITIONS, STAGES, STAGE_COUNTER, STAGE_REMAINING, STAGES_REMAINING};
 
-use cosmwasm_std::{entry_point, to_binary, Addr, DepsMut, Env, MessageInfo, Reply, ReplyOn, Response, StdResult, SubMsg, WasmMsg, Deps, Binary, coin, Order, CosmosMsg, Empty, BankMsg, Storage, Uint128};
+use cosmwasm_std::{entry_point, to_binary, Addr, DepsMut, Env, MessageInfo, Reply, ReplyOn, Response, StdResult, SubMsg, WasmMsg, Deps, Binary, coin, Order, CosmosMsg, Empty, BankMsg, Uint128};
 use cw2::set_contract_version;
 use bs721_base::{InstantiateMsg as Cw721InstantiateMsg, Extension, MintMsg, ExecuteMsg as Cw721ExecuteMsg };
 use cw_utils::{parse_reply_instantiate_data, maybe_addr, may_pay};
-use rand::seq::SliceRandom;
-use rand_chacha::ChaCha20Rng;
-use rand_core::{RngCore, SeedableRng};
-use sha2::{Digest, Sha256};
+use sha2::Digest;
 
 // version info for migration info
 const CONTRACT_NAME: &str = "crates.io:bs721-launchpad";
@@ -19,11 +17,6 @@ const INSTANTIATE_BS721_CODE_ID: u64 = 40;
 const INSTANTIATE_REPLY_ID: u64 = 1;
 
 const MAX_SELLER_FEE: u16 = 10000; // mean 100.00%
-
-pub struct TokenPositionMapping {
-    pub position: u128,
-    pub token_id: u128,
-}
 
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn instantiate(
@@ -156,7 +149,10 @@ pub fn execute(
     msg: ExecuteMsg,
 ) -> Result<Response, ContractError> {
     match msg {
-        ExecuteMsg::Mint { stage, proofs } => execute_mint(deps, env, info, stage, proofs),
+        ExecuteMsg::Mint { 
+            stage, 
+            proofs 
+        } => execute_mint(deps, env, info, stage, proofs),
     }
 }
 
@@ -165,7 +161,7 @@ pub fn execute_mint(
     env: Env,
     info: MessageInfo,
     stage_id: u8,
-    _proofs: Option<Vec<String>>
+    proofs: Vec<String>
 ) -> Result<Response, ContractError> {
     let stage = STAGES.may_load(deps.storage, stage_id)?;
 
@@ -203,8 +199,30 @@ pub fn execute_mint(
                 }
             }
 
-            // TODO: add pause?
-            // TODO: verify merkle_root
+            if let Some(merkle_root) = stage.merkle_root.clone() {
+                let user_addr = format!("{}", info.sender.to_string());
+                let hash = sha2::Sha256::digest(user_addr.as_bytes())
+                    .as_slice()
+                    .try_into()
+                    .map_err(|_| ContractError::WrongLength {})?;
+                
+                let hash = proofs.into_iter().try_fold(hash, |hash, p| {
+                    let mut proof_buf = [0; 32];
+                    hex::decode_to_slice(p, &mut proof_buf).expect("unexpected");
+                    let mut hashes = [hash, proof_buf];
+                    hashes.sort_unstable();
+                    sha2::Sha256::digest(&hashes.concat())
+                        .as_slice()
+                        .try_into()
+                        .map_err(|_| ContractError::WrongLength {})
+                })?;
+
+                let mut root_buf: [u8; 32] = [0; 32];
+                hex::decode_to_slice(merkle_root.clone(), &mut root_buf).expect("unexpected");
+                if root_buf != hash {
+                    return Err(ContractError::VerificationFailed {});
+                }
+            }
 
         },
         None => {
@@ -268,78 +286,6 @@ pub fn execute_mint(
     )
 }
 
-fn generate_rng(
-    storage: &mut dyn Storage,
-    env: &Env,
-    sender: Addr
-) -> Result<ChaCha20Rng, ContractError> {
-    let seed = SEED.load(storage)?;
-
-    let tx_index = if let Some(tx) = &env.transaction {
-        tx.index
-    } else {
-        0
-    };
-
-    let mut new_seed = seed.to_vec();
-    new_seed.extend(env.block.chain_id.as_bytes().to_vec());
-    new_seed.extend(&env.block.height.to_be_bytes());
-    new_seed.extend(sender.as_bytes());
-    new_seed.extend(tx_index.to_be_bytes());
-
-    SEED.save(storage, &Sha256::digest(&new_seed).into())?;
-
-    let rng = ChaCha20Rng::from_seed(seed);
-
-    Ok(rng)
-}
-
-fn random_nft_list(
-    storage: &mut dyn Storage,
-    env: &Env,
-    sender: Addr,
-    mut tokens: Vec<u128>,
-) -> Result<Vec<u128>, ContractError> {
-    let mut rng = generate_rng(storage, &env, sender)?;
-    tokens.shuffle(&mut rng);
-
-    Ok(tokens)
-}
-
-fn pick_random_nft(
-    storage: &mut dyn Storage,
-    env: &Env,
-    sender: Addr,
-) -> Result<TokenPositionMapping, ContractError> {
-    let nft_remaining = STAGES_REMAINING.load(storage)?;
-    
-    let mut rng = generate_rng(storage, &env, sender)?;
-    
-    let next_random = rng.next_u32();
-    
-    let order = match next_random % 2 {
-        1 => Order::Descending,
-        _ => Order::Ascending,
-    };
-
-    let mut skip = 5u128;
-    if skip > nft_remaining.u128() {
-        skip = nft_remaining.u128()
-    }
-
-    skip = next_random as u128 % skip;
-    
-    let position = NFT_POSITIONS
-        .keys(storage, None, None, order)
-        .skip(skip as usize)
-        .take(1)
-        .collect::<StdResult<Vec<_>>>()?[0];
-
-    let token_id = NFT_POSITIONS.load(storage, position)?;
-
-    Ok(TokenPositionMapping { position, token_id })
-}
-
 #[cfg_attr(not(feature = "library"), entry_point)]
 pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
     match msg {
@@ -368,20 +314,9 @@ fn query_config(deps: Deps) -> StdResult<ConfigResponse> {
     })
 }
 
-fn map_stages(item: StdResult<(u8, Stage)>) -> StdResult<StageResponse> {
-    item.map(|(id, stage)| StageResponse {
-        id,
-        merkle_root: stage.merkle_root,
-        start: stage.start,
-        expiration: stage.expiration,
-        price: stage.price,
-        total_amount: stage.total_amount,
-    })
-}
-
 #[cfg(test)]
 mod tests {
-    use crate::msg::Stage;
+    use crate::msg::{Stage, StageResponse};
 
     use super::*;
     use prost::Message;
@@ -527,7 +462,7 @@ mod tests {
 
         let mint_msg = ExecuteMsg::Mint{
             stage: 1u8,
-            proofs: None
+            proofs: vec![]
         };
 
         // free_mint, should mint one and fail the others

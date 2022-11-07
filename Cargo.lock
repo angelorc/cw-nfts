@@ -83,6 +83,7 @@ dependencies = [
  "cw2 0.15.1",
  "cw4 0.15.1",
  "cw721",
+ "hex",
  "prost 0.10.4",
  "rand",
  "rand_chacha",
