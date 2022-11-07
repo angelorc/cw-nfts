@@ -9,7 +9,24 @@
       ],
       "properties": {
         "mint": {
-          "type": "object"
+          "type": "object",
+          "required": [
+            "proofs",
+            "stage"
+          ],
+          "properties": {
+            "proofs": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "stage": {
+              "type": "integer",
+              "format": "uint8",
+              "minimum": 0.0
+            }
+          }
         }
       },
       "additionalProperties": false

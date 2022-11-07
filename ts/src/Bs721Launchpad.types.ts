@@ -5,18 +5,39 @@
 */
 
 export type Addr = string;
+export type Expiration = {
+  at_height: number;
+} | {
+  at_time: Timestamp;
+} | {
+  never: {};
+};
+export type Timestamp = Uint64;
+export type Uint64 = string;
 export type Uint128 = string;
+export type Scheduled = {
+  at_height: number;
+} | {
+  at_time: Timestamp;
+};
 export interface ConfigResponse {
   admin: Addr;
   base_token_uri: string;
   collection_uri?: string | null;
   name: string;
-  nft_address?: Addr | null;
-  nft_remaining: number;
+  nft_address: Addr;
   payment_address?: Addr | null;
-  price: Coin;
   seller_fee_bps: number;
+  stages: StageResponse[];
   symbol: string;
+}
+export interface StageResponse {
+  expiration?: Expiration | null;
+  id: number;
+  merkle_root?: string | null;
+  price?: Coin | null;
+  start?: Scheduled | null;
+  total_amount: number;
 }
 export interface Coin {
   amount: Uint128;
@@ -29,13 +50,14 @@ export interface Config {
   collection_uri?: string | null;
   name: string;
   payment_address?: Addr | null;
-  price: Coin;
   seller_fee_bps: number;
   symbol: string;
   [k: string]: unknown;
 }
 export type ExecuteMsg = {
   mint: {
+    proofs: string[];
+    stage: number;
     [k: string]: unknown;
   };
 };
@@ -44,11 +66,17 @@ export interface InstantiateMsg {
   base_token_uri: string;
   collection_uri?: string | null;
   name: string;
-  nft_limit: number;
   payment_address?: string | null;
-  price: Coin;
   seller_fee: number;
+  stages: Stage[];
   symbol: string;
+}
+export interface Stage {
+  expiration?: Expiration | null;
+  merkle_root?: string | null;
+  price?: Coin | null;
+  start?: Scheduled | null;
+  total_amount: number;
 }
 export type QueryMsg = {
   config: {};

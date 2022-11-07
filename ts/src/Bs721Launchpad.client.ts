@@ -6,7 +6,7 @@
 
 import { CosmWasmClient, SigningCosmWasmClient, ExecuteResult } from "@cosmjs/cosmwasm-stargate";
 import { StdFee } from "@cosmjs/amino";
-import { Addr, Uint128, ConfigResponse, Coin, Config, ExecuteMsg, InstantiateMsg, QueryMsg } from "./Bs721Launchpad.types";
+import { Addr, Expiration, Timestamp, Uint64, Uint128, Scheduled, ConfigResponse, StageResponse, Coin, Config, ExecuteMsg, InstantiateMsg, Stage, QueryMsg } from "./Bs721Launchpad.types";
 export interface Bs721LaunchpadReadOnlyInterface {
   contractAddress: string;
   config: () => Promise<ConfigResponse>;
@@ -30,7 +30,13 @@ export class Bs721LaunchpadQueryClient implements Bs721LaunchpadReadOnlyInterfac
 export interface Bs721LaunchpadInterface extends Bs721LaunchpadReadOnlyInterface {
   contractAddress: string;
   sender: string;
-  mint: (fee?: number | StdFee | "auto", memo?: string, funds?: Coin[]) => Promise<ExecuteResult>;
+  mint: ({
+    proofs,
+    stage
+  }: {
+    proofs: string[];
+    stage: number;
+  }, fee?: number | StdFee | "auto", memo?: string, funds?: Coin[]) => Promise<ExecuteResult>;
 }
 export class Bs721LaunchpadClient extends Bs721LaunchpadQueryClient implements Bs721LaunchpadInterface {
   client: SigningCosmWasmClient;
@@ -45,9 +51,18 @@ export class Bs721LaunchpadClient extends Bs721LaunchpadQueryClient implements B
     this.mint = this.mint.bind(this);
   }
 
-  mint = async (fee: number | StdFee | "auto" = "auto", memo?: string, funds?: Coin[]): Promise<ExecuteResult> => {
+  mint = async ({
+    proofs,
+    stage
+  }: {
+    proofs: string[];
+    stage: number;
+  }, fee: number | StdFee | "auto" = "auto", memo?: string, funds?: Coin[]): Promise<ExecuteResult> => {
     return await this.client.execute(this.sender, this.contractAddress, {
-      mint: {}
+      mint: {
+        proofs,
+        stage
+      }
     }, fee, memo, funds);
   };
 }

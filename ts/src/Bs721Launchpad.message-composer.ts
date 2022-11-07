@@ -7,11 +7,17 @@
 import { MsgExecuteContractEncodeObject } from "cosmwasm";
 import { MsgExecuteContract } from "cosmjs-types/cosmwasm/wasm/v1/tx";
 import { toUtf8 } from "@cosmjs/encoding";
-import { Addr, Uint128, ConfigResponse, Coin, Config, ExecuteMsg, InstantiateMsg, QueryMsg } from "./Bs721Launchpad.types";
+import { Addr, Expiration, Timestamp, Uint64, Uint128, Scheduled, ConfigResponse, StageResponse, Coin, Config, ExecuteMsg, InstantiateMsg, Stage, QueryMsg } from "./Bs721Launchpad.types";
 export interface Bs721LaunchpadMessage {
   contractAddress: string;
   sender: string;
-  mint: (funds?: Coin[]) => MsgExecuteContractEncodeObject;
+  mint: ({
+    proofs,
+    stage
+  }: {
+    proofs: string[];
+    stage: number;
+  }, funds?: Coin[]) => MsgExecuteContractEncodeObject;
 }
 export class Bs721LaunchpadMessageComposer implements Bs721LaunchpadMessage {
   sender: string;
@@ -23,14 +29,23 @@ export class Bs721LaunchpadMessageComposer implements Bs721LaunchpadMessage {
     this.mint = this.mint.bind(this);
   }
 
-  mint = (funds?: Coin[]): MsgExecuteContractEncodeObject => {
+  mint = ({
+    proofs,
+    stage
+  }: {
+    proofs: string[];
+    stage: number;
+  }, funds?: Coin[]): MsgExecuteContractEncodeObject => {
     return {
       typeUrl: "/cosmwasm.wasm.v1.MsgExecuteContract",
       value: MsgExecuteContract.fromPartial({
         sender: this.sender,
         contract: this.contractAddress,
         msg: toUtf8(JSON.stringify({
-          mint: {}
+          mint: {
+            proofs,
+            stage
+          }
         })),
         funds
       })
