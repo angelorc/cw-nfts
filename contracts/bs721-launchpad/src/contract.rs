@@ -1,9 +1,8 @@
 use crate::error::ContractError;
-use crate::msg::{InstantiateMsg, ConfigResponse, QueryMsg, ExecuteMsg};
-use crate::state::{Config, CONFIG, NFT_ADDRESS, SEED, NFT_POSITIONS, STAGES};
-use crate::validator::{validate_stages, validate_seller_fee};
+use crate::msg::{InstantiateMsg, ConfigResponse, QueryMsg, ExecuteMsg, StageResponse, Stage};
+use crate::state::{Config, CONFIG, NFT_ADDRESS, SEED, NFT_POSITIONS, STAGES, STAGE_COUNTER, STAGE_REMAINING, STAGES_REMAINING};
 
-use cosmwasm_std::{entry_point, to_binary, Addr, DepsMut, Env, MessageInfo, Reply, ReplyOn, Response, StdResult, SubMsg, WasmMsg, Deps, Binary, coin, Order, CosmosMsg, Empty, BankMsg, Storage};
+use cosmwasm_std::{entry_point, to_binary, Addr, DepsMut, Env, MessageInfo, Reply, ReplyOn, Response, StdResult, SubMsg, WasmMsg, Deps, Binary, coin, Order, CosmosMsg, Empty, BankMsg, Storage, Uint128};
 use cw2::set_contract_version;
 use bs721_base::{InstantiateMsg as Cw721InstantiateMsg, Extension, MintMsg, ExecuteMsg as Cw721ExecuteMsg };
 use cw_utils::{parse_reply_instantiate_data, maybe_addr, may_pay};
@@ -19,9 +18,11 @@ const CONTRACT_VERSION: &str = env!("CARGO_PKG_VERSION");
 const INSTANTIATE_BS721_CODE_ID: u64 = 40;
 const INSTANTIATE_REPLY_ID: u64 = 1;
 
+const MAX_SELLER_FEE: u16 = 10000; // mean 100.00%
+
 pub struct TokenPositionMapping {
-    pub position: u32,
-    pub token_id: u32,
+    pub position: u128,
+    pub token_id: u128,
 }
 
 #[cfg_attr(not(feature = "library"), entry_point)]
@@ -33,10 +34,14 @@ pub fn instantiate(
 ) -> Result<Response, ContractError> {
     set_contract_version(deps.storage, CONTRACT_NAME, CONTRACT_VERSION)?;
 
-    let msg_stages = msg.stages.clone();
+    let stages = msg.stages.clone();
+    if stages.len() == 0 {
+        return Err(ContractError::StageRequired {  })
+    }
 
-    validate_seller_fee(msg.seller_fee.clone())?;   
-    validate_stages(msg_stages.clone(), env.block.time.clone())?;
+    if msg.seller_fee.clone() > MAX_SELLER_FEE {
+        return Err(ContractError::SellerFeeBasisPointsTooHigh { })
+    }
 
     let cfg = Config {
         admin: deps.api.addr_validate(&msg.admin)?,
@@ -47,10 +52,26 @@ pub fn instantiate(
         collection_uri: msg.collection_uri.clone(),
         seller_fee_bps: msg.seller_fee.clone()
     };
-
-
     CONFIG.save(deps.storage, &cfg)?;
-    STAGES.save(deps.storage, &msg_stages.clone().to_stages())?;
+
+    let mut stages_supply = Uint128::from(0u128);
+    let mut stage_counter = 0u8;
+
+    for stage in stages.iter() {      
+        if stage.total_amount == 0 {
+            return Err(ContractError::StageInvalidSupply { })
+        }
+
+        stage_counter = stage_counter + 1u8;
+
+        stages_supply = stages_supply + Uint128::from(stage.total_amount);
+        
+        STAGES.save(deps.storage, stage_counter.clone(), &stage.clone())?;
+        STAGE_REMAINING.save(deps.storage, stage_counter.clone(), &Uint128::from(stage.total_amount))?;
+    }
+
+    STAGES_REMAINING.save(deps.storage, &stages_supply)?;
+    STAGE_COUNTER.save(deps.storage, &stage_counter)?;
 
     // Store default seed
     let default_seed = [0_u8; 32];
@@ -62,14 +83,14 @@ pub fn instantiate(
         &env,
         deps.api
             .addr_validate(&msg.admin.to_string())?,
-        (1..=msg_stages.total_supply()).collect::<Vec<u32>>(),
+        (1u128..=u128::from(stages_supply)).collect::<Vec<u128>>(),
     )?;
 
     // Save token_ids map
-    let mut nft_position = 1;
+    let mut nft_position = 1u128;
     for token_id in token_ids {
         NFT_POSITIONS.save(deps.storage, nft_position, &token_id)?;
-        nft_position += 1;
+        nft_position += 1u128;
     }
 
     // Creating a message to instantiate a new bs721 contract
@@ -135,43 +156,68 @@ pub fn execute(
     msg: ExecuteMsg,
 ) -> Result<Response, ContractError> {
     match msg {
-        ExecuteMsg::Mint {} => execute_mint(deps, env, info),
+        ExecuteMsg::Mint { stage, proofs } => execute_mint(deps, env, info, stage, proofs),
     }
 }
 
 pub fn execute_mint(
     deps: DepsMut,
     env: Env,
-    info: MessageInfo
+    info: MessageInfo,
+    stage_id: u8,
+    _proofs: Option<Vec<String>>
 ) -> Result<Response, ContractError> {
+    let stage = STAGES.may_load(deps.storage, stage_id)?;
+
+    match stage.clone() {
+        Some(stage) => {
+            // stage begun
+            if let Some(start) = stage.start {
+                if !start.is_triggered(&env.block) {
+                    return Err(ContractError::StageNotBegun {  })
+                }
+            }
+
+            // check not expired
+            if let Some(expiration) = stage.expiration {
+                if expiration.is_expired(&env.block) {
+                    return Err(ContractError::StageExpired {  })
+                }
+            }
+
+            // check remaining
+            let stage_remaining = STAGE_REMAINING.load(deps.storage, stage_id)?;
+            if stage_remaining.is_zero() {
+                return Err(ContractError::StageSoldOut {  })
+            }
+
+            // check price
+            if let Some(stage_price) = stage.price.clone() {
+                let payment = may_pay(&info, &stage_price.denom).unwrap();
+    
+                if payment != &stage_price.amount {
+                    return Err(ContractError::IncorrectPaymentAmount(
+                        coin(payment.u128(), &stage_price.denom.clone()),
+                        stage_price.clone(),
+                    ));
+                }
+            }
+
+            // TODO: add pause?
+            // TODO: verify merkle_root
+
+        },
+        None => {
+            return Err(ContractError::StageNotFound {  })
+        },
+    }
+
     let config = CONFIG.load(deps.storage)?;
     let nft_address = NFT_ADDRESS.load(deps.storage)?;
     let payment_address = config.payment_address.clone().unwrap_or(config.admin.clone()).to_string();
-    let mut stages = STAGES.load(deps.storage)?;
-
-    let current_stage = stages.current_stage(env.block.time)?;
-    if current_stage.remaining() == 0 {
-        return Err(ContractError::StageSoldOut {  })
-    }
-
-    // Check payment
-    match current_stage.price.clone() {
-        Some(price) => {
-
-            let payment = may_pay(&info, &price.denom).unwrap();
-    
-            if payment != &price.amount {
-                return Err(ContractError::IncorrectPaymentAmount(
-                    coin(payment.u128(), &price.denom.clone()),
-                    price.clone(),
-                ));
-            }
-        }
-        _ => {},
-    };    
 
     let mintable_token_mapping = pick_random_nft(deps.storage, &env, info.sender.clone())?;
-
+    
     // Create mint msgs
     let mut response = Response::new();
 
@@ -183,7 +229,7 @@ pub fn execute_mint(
         )),
         owner: info.sender.clone().to_string(),
         extension: None,
-        seller_fee: 0u16,
+        seller_fee: config.seller_fee_bps,
         payment_address: Some(payment_address.clone())
     });
 
@@ -195,36 +241,24 @@ pub fn execute_mint(
     response = response.add_message(msg);
 
     // Remove mintable token position from map
-    NFT_POSITIONS.remove(deps.storage, mintable_token_mapping.position);
+    NFT_POSITIONS.remove(deps.storage, mintable_token_mapping.position.into());
 
-    // Increment stage supply
-    let mut stage = current_stage.clone();
-    stage.supply = stage.supply + 1;
-
-    if stage.label == "free_mint" {
-        stages.free_mint = Some(stage)
-    } else if stage.label == "pre_sale" {
-        stages.pre_sale = Some(stage)
-    } else {
-        stages.public_sale = stage
-    }
-
-    STAGES.save(deps.storage, &stages)?;
+    // Reduce stage remaining
+    let mut stage_remaining = STAGE_REMAINING.load(deps.storage, stage_id.clone())?;
+    stage_remaining = stage_remaining - Uint128::from(1u128);
+    STAGE_REMAINING.save(deps.storage, stage_id.clone(), &stage_remaining)?;
 
     // Send funds to the owner
-    match current_stage.price.clone() {
-        Some(price) => {
-            let msg = BankMsg::Send {
-                to_address: payment_address.clone(),
-                amount: vec![price.clone()],
-            };
-            response = response.add_message(msg);
-            response = response.add_attribute("price", price.to_string());
-        }
-        None => {
-            response = response.add_attribute("price", "0".to_string());
-        },
-    };  
+    if let Some(price) = stage.unwrap().price.clone() {
+        let msg = BankMsg::Send {
+            to_address: payment_address.clone(),
+            amount: vec![price.clone()],
+        };
+        response = response.add_message(msg);
+        response = response.add_attribute("price", price.to_string());
+    } else {
+        response = response.add_attribute("price", "0".to_string());
+    }
 
     Ok(response
         .add_attribute("action", "execute_mint")
@@ -232,7 +266,6 @@ pub fn execute_mint(
         .add_attribute("recipient", info.sender)
         .add_attribute("token_id", mintable_token_mapping.token_id.to_string())
     )
-
 }
 
 fn generate_rng(
@@ -265,8 +298,8 @@ fn random_nft_list(
     storage: &mut dyn Storage,
     env: &Env,
     sender: Addr,
-    mut tokens: Vec<u32>,
-) -> Result<Vec<u32>, ContractError> {
+    mut tokens: Vec<u128>,
+) -> Result<Vec<u128>, ContractError> {
     let mut rng = generate_rng(storage, &env, sender)?;
     tokens.shuffle(&mut rng);
 
@@ -278,8 +311,7 @@ fn pick_random_nft(
     env: &Env,
     sender: Addr,
 ) -> Result<TokenPositionMapping, ContractError> {
-    let stages = STAGES.load(storage)?;
-    let nft_remaining = stages.remaining_supply();
+    let nft_remaining = STAGES_REMAINING.load(storage)?;
     
     let mut rng = generate_rng(storage, &env, sender)?;
     
@@ -290,12 +322,12 @@ fn pick_random_nft(
         _ => Order::Ascending,
     };
 
-    let mut skip = 5;
-    if skip > nft_remaining {
-        skip = nft_remaining
+    let mut skip = 5u128;
+    if skip > nft_remaining.u128() {
+        skip = nft_remaining.u128()
     }
 
-    skip = next_random % skip;
+    skip = next_random as u128 % skip;
     
     let position = NFT_POSITIONS
         .keys(storage, None, None, order)
@@ -318,7 +350,10 @@ pub fn query(deps: Deps, _env: Env, msg: QueryMsg) -> StdResult<Binary> {
 fn query_config(deps: Deps) -> StdResult<ConfigResponse> {
     let config = CONFIG.load(deps.storage)?;
     let nft_address = NFT_ADDRESS.load(deps.storage)?;
-    let stages = STAGES.load(deps.storage)?;
+    let stages = STAGES
+        .range(deps.storage, None, None, Order::Ascending)
+        .map(map_stages)
+        .collect::<StdResult<Vec<_>>>()?;
 
     Ok(ConfigResponse {
         nft_address: nft_address,
@@ -333,16 +368,25 @@ fn query_config(deps: Deps) -> StdResult<ConfigResponse> {
     })
 }
 
+fn map_stages(item: StdResult<(u8, Stage)>) -> StdResult<StageResponse> {
+    item.map(|(id, stage)| StageResponse {
+        id,
+        merkle_root: stage.merkle_root,
+        start: stage.start,
+        expiration: stage.expiration,
+        price: stage.price,
+        total_amount: stage.total_amount,
+    })
+}
+
 #[cfg(test)]
 mod tests {
-    use crate::msg::{StagesMsg, StageMsgWithPrice, StageMsgNoPrice};
+    use crate::msg::Stage;
 
     use super::*;
     use prost::Message;
-    use cosmwasm_std::{
-        testing::{mock_dependencies, mock_env, mock_info, MOCK_CONTRACT_ADDR},
-        Coin, Timestamp, Uint128, SubMsgResult, SubMsgResponse, from_binary, BlockInfo, TransactionInfo, ContractInfo,
-    };
+    use cosmwasm_std::testing::{mock_dependencies, mock_env, mock_info, MOCK_CONTRACT_ADDR};
+    use cosmwasm_std::{SubMsgResult, SubMsgResponse, from_binary};
 
     // Type for replies to contract instantiate messes
     #[derive(Clone, PartialEq, Message)]
@@ -353,194 +397,35 @@ mod tests {
         pub data: ::prost::alloc::vec::Vec<u8>,
     }
 
-    pub fn mock_env_instantiate() -> Env {
-        Env {
-            block: BlockInfo {
-                height: 12_345,
-                time: Timestamp::from_nanos(1571797430000000000),
-                chain_id: "cosmos-testnet-14002".to_string(),
-            },
-            transaction: Some(TransactionInfo { index: 3 }),
-            contract: ContractInfo {
-                address: Addr::unchecked(MOCK_CONTRACT_ADDR),
-            },
-        }
-    }
-
-    pub fn mock_env_free_mint() -> Env {
-        Env {
-            block: BlockInfo {
-                height: 12_345,
-                time: Timestamp::from_nanos(1571797450000000000),
-                chain_id: "cosmos-testnet-14002".to_string(),
-            },
-            transaction: Some(TransactionInfo { index: 3 }),
-            contract: ContractInfo {
-                address: Addr::unchecked(MOCK_CONTRACT_ADDR),
-            },
-        }
-    }
-
-    pub fn mock_env_pre_sale() -> Env {
-        Env {
-            block: BlockInfo {
-                height: 12_345,
-                time: Timestamp::from_nanos(1571797480000000000),
-                chain_id: "cosmos-testnet-14002".to_string(),
-            },
-            transaction: Some(TransactionInfo { index: 3 }),
-            contract: ContractInfo {
-                address: Addr::unchecked(MOCK_CONTRACT_ADDR),
-            },
-        }
-    }
-
-    pub fn mock_env_public_sale() -> Env {
-        Env {
-            block: BlockInfo {
-                height: 12_345,
-                time: Timestamp::from_nanos(1571797510000000000),
-                chain_id: "cosmos-testnet-14002".to_string(),
-            },
-            transaction: Some(TransactionInfo { index: 3 }),
-            contract: ContractInfo {
-                address: Addr::unchecked(MOCK_CONTRACT_ADDR),
-            },
-        }
-    }
-
-    fn init_msg_full() -> InstantiateMsg {
+    fn instantiate_msg() -> InstantiateMsg {
         InstantiateMsg {
             name: "test".to_string(),
             collection_uri: Some("ipfs://...".to_string()).clone(),
             symbol: String::from("test"),
             admin: String::from("creator"),
-            stages: StagesMsg { 
-                free_mint: Some(StageMsgNoPrice {                        
-                    start_date: Timestamp::from_nanos(1571797440000000000),
-                    end_date:   Timestamp::from_nanos(1571797460000000000),
-                    max_supply: 1,
-                }),
-                pre_sale: Some(StageMsgWithPrice {
-                    start_date: Timestamp::from_nanos(1571797470000000000),
-                    end_date:   Timestamp::from_nanos(1571797490000000000),
-                    max_supply: 2,
-                    price: Coin {
-                        denom: "ubtsg".to_string(),
-                        amount: Uint128::new(100),
-                    }
-                }),
-                public_sale: StageMsgWithPrice {
-                    start_date: Timestamp::from_nanos(1571797500000000000),
-                    end_date:   Timestamp::from_nanos(1571797520000000000),
-                    max_supply: 3,
-                    price: Coin {
-                        denom: "ubtsg".to_string(),
-                        amount: Uint128::new(100),
-                    }
-                }
-            },
+            stages: vec![
+                Stage {
+                    merkle_root: None,
+                    start: None,
+                    expiration: None,
+                    price: Some(coin(100u128, "ubtsg".to_string())),
+                    total_amount: 1u32
+                },
+            ],
             payment_address: Some(Addr::unchecked("payment_address").to_string()),
             base_token_uri: "ipfs://....".to_string(),
             seller_fee: 0,
         }
     }
 
-    fn init_msg_free_public() -> InstantiateMsg {
-        InstantiateMsg {
-            name: "test".to_string(),
-            collection_uri: Some("ipfs://...".to_string()).clone(),
-            symbol: String::from("test"),
-            admin: String::from("creator"),
-            stages: StagesMsg { 
-                free_mint: Some(StageMsgNoPrice {                        
-                    start_date: Timestamp::from_nanos(1571797440000000000),
-                    end_date:   Timestamp::from_nanos(1571797460000000000),
-                    max_supply: 1,
-                }),
-                pre_sale: None,
-                public_sale: StageMsgWithPrice {
-                    start_date: Timestamp::from_nanos(1571797500000000000),
-                    end_date:   Timestamp::from_nanos(1571797520000000000),
-                    max_supply: 10,
-                    price: Coin {
-                        denom: "ubtsg".to_string(),
-                        amount: Uint128::new(100),
-                    }
-                }
-            },
-            payment_address: None,
-            base_token_uri: "ipfs://....".to_string(),
-            seller_fee: 0,
-        }
-    }
-
-    fn init_msg_pre_public() -> InstantiateMsg {
-        InstantiateMsg {
-            name: "test".to_string(),
-            collection_uri: Some("ipfs://...".to_string()).clone(),
-            symbol: String::from("test"),
-            admin: String::from("creator"),
-            stages: StagesMsg { 
-                free_mint: None,
-                pre_sale: Some(StageMsgWithPrice {
-                    start_date: Timestamp::from_nanos(1571797470000000000),
-                    end_date:   Timestamp::from_nanos(1571797490000000000),
-                    max_supply: 1,
-                    price: Coin {
-                        denom: "ubtsg".to_string(),
-                        amount: Uint128::new(100),
-                    }
-                }),
-                public_sale: StageMsgWithPrice {
-                    start_date: Timestamp::from_nanos(1571797500000000000),
-                    end_date:   Timestamp::from_nanos(1571797520000000000),
-                    max_supply: 10,
-                    price: Coin {
-                        denom: "ubtsg".to_string(),
-                        amount: Uint128::new(100),
-                    }
-                }
-            },
-            payment_address: None,
-            base_token_uri: "ipfs://....".to_string(),
-            seller_fee: 0,
-        }
-    }
-
-    fn init_msg_public() -> InstantiateMsg {
-        InstantiateMsg {
-            name: "test".to_string(),
-            collection_uri: Some("ipfs://...".to_string()).clone(),
-            symbol: String::from("test"),
-            admin: String::from("creator"),
-            stages: StagesMsg { 
-                free_mint: None,
-                pre_sale: None,
-                public_sale: StageMsgWithPrice {
-                    start_date: Timestamp::from_nanos(1571797500000000000),
-                    end_date:   Timestamp::from_nanos(1571797520000000000),
-                    max_supply: 10,
-                    price: Coin {
-                        denom: "ubtsg".to_string(),
-                        amount: Uint128::new(100),
-                    }
-                }
-            },
-            payment_address: None,
-            base_token_uri: "ipfs://....".to_string(),
-            seller_fee: 0,
-        }
-    }
-
     #[test]
-    fn instantiate_full_test() {
+    fn instantiate_test() {
         let mut deps = mock_dependencies();
         let env = mock_env();
 
         let creator_info = mock_info("creator", &[]);
 
-        let init_msg = &init_msg_full();
+        let init_msg = &instantiate_msg();
 
         let res = instantiate(deps.as_mut(), env.clone(), creator_info.clone(), init_msg.clone()).unwrap();
 
@@ -600,271 +485,27 @@ mod tests {
                 seller_fee_bps: init_msg.seller_fee.clone(),
                 payment_address: Some(Addr::unchecked("payment_address")),
                 nft_address: Addr::unchecked("nft_address"),
-                stages: init_msg.stages.to_stages(),
+                stages: vec![
+                    StageResponse {
+                        id: 1,
+                        merkle_root: None,
+                        start: None,
+                        expiration: None,
+                        price: Some(coin(100u128, "ubtsg".to_string())),
+                        total_amount: 1u32
+                    },
+                ],
             }
         );
     }
 
     #[test]
-    fn instantiate_public_test() {
-        let mut deps = mock_dependencies();
-        let env = mock_env();
-
-        let creator_info = mock_info("creator", &[]);
-
-        let init_msg = &init_msg_public();
-
-        let res = instantiate(deps.as_mut(), env.clone(), creator_info.clone(), init_msg.clone()).unwrap();
-
-        assert_eq!(
-            res.messages,
-            vec![SubMsg {
-                msg: WasmMsg::Instantiate {
-                    code_id: INSTANTIATE_BS721_CODE_ID,
-                    msg: to_binary(&Cw721InstantiateMsg {
-                        name: init_msg.name.clone(),
-                        symbol: init_msg.symbol.clone(),
-                        minter: MOCK_CONTRACT_ADDR.to_string(),
-                        uri: Some("ipfs://...".to_string()),
-                    })
-                    .unwrap(),
-                    funds: vec![],
-                    admin: Some(creator_info.sender.to_string()),
-                    label: String::from("BS721-test"),
-                }
-                .into(),
-                id: INSTANTIATE_REPLY_ID,
-                gas_limit: None,
-                reply_on: ReplyOn::Success,
-            }]
-        );
-
-        let instantiate_reply = MsgInstantiateContractResponse {
-            contract_address: "nft_address".to_string(),
-            data: vec![2u8; 32769],
-        };
-        let mut encoded_instantiate_reply =
-            Vec::<u8>::with_capacity(instantiate_reply.encoded_len());
-        instantiate_reply
-            .encode(&mut encoded_instantiate_reply)
-            .unwrap();
-
-        let reply_msg = Reply {
-            id: INSTANTIATE_REPLY_ID,
-            result: SubMsgResult::Ok(SubMsgResponse {
-                events: vec![],
-                data: Some(encoded_instantiate_reply.into()),
-            }),
-        };
-        reply(deps.as_mut(), mock_env(), reply_msg).unwrap();
-
-        let query_msg = QueryMsg::Config {};
-        let res = query(deps.as_ref(), mock_env(), query_msg.clone()).unwrap();
-        let config: ConfigResponse = from_binary(&res).unwrap();
-        assert_eq!(
-            config,
-            ConfigResponse {
-                admin: creator_info.sender.clone(),
-                name: init_msg.name.clone(),
-                symbol: init_msg.symbol.clone(),
-                collection_uri: init_msg.collection_uri.clone(),
-                base_token_uri: init_msg.base_token_uri.clone(),
-                seller_fee_bps: init_msg.seller_fee.clone(),
-                payment_address: None,
-                nft_address: Addr::unchecked("nft_address"),
-                stages: init_msg.stages.to_stages(),
-            }
-        );
-    }
-
-    #[test]
-    fn instantiate_free_public_test() {
-        let mut deps = mock_dependencies();
-        let env = mock_env();
-
-        let creator_info = mock_info("creator", &[]);
-
-        let init_msg = &init_msg_free_public();
-
-        let res = instantiate(deps.as_mut(), env.clone(), creator_info.clone(), init_msg.clone()).unwrap();
-
-        assert_eq!(
-            res.messages,
-            vec![SubMsg {
-                msg: WasmMsg::Instantiate {
-                    code_id: INSTANTIATE_BS721_CODE_ID,
-                    msg: to_binary(&Cw721InstantiateMsg {
-                        name: init_msg.name.clone(),
-                        symbol: init_msg.symbol.clone(),
-                        minter: MOCK_CONTRACT_ADDR.to_string(),
-                        uri: Some("ipfs://...".to_string()),
-                    })
-                    .unwrap(),
-                    funds: vec![],
-                    admin: Some(creator_info.sender.to_string()),
-                    label: String::from("BS721-test"),
-                }
-                .into(),
-                id: INSTANTIATE_REPLY_ID,
-                gas_limit: None,
-                reply_on: ReplyOn::Success,
-            }]
-        );
-
-        let instantiate_reply = MsgInstantiateContractResponse {
-            contract_address: "nft_address".to_string(),
-            data: vec![2u8; 32769],
-        };
-        let mut encoded_instantiate_reply =
-            Vec::<u8>::with_capacity(instantiate_reply.encoded_len());
-        instantiate_reply
-            .encode(&mut encoded_instantiate_reply)
-            .unwrap();
-
-        let reply_msg = Reply {
-            id: INSTANTIATE_REPLY_ID,
-            result: SubMsgResult::Ok(SubMsgResponse {
-                events: vec![],
-                data: Some(encoded_instantiate_reply.into()),
-            }),
-        };
-        reply(deps.as_mut(), mock_env(), reply_msg).unwrap();
-
-        let query_msg = QueryMsg::Config {};
-        let res = query(deps.as_ref(), mock_env(), query_msg.clone()).unwrap();
-        let config: ConfigResponse = from_binary(&res).unwrap();
-        assert_eq!(
-            config,
-            ConfigResponse {
-                admin: creator_info.sender.clone(),
-                name: init_msg.name.clone(),
-                symbol: init_msg.symbol.clone(),
-                collection_uri: init_msg.collection_uri.clone(),
-                base_token_uri: init_msg.base_token_uri.clone(),
-                seller_fee_bps: init_msg.seller_fee.clone(),
-                payment_address: None,
-                nft_address: Addr::unchecked("nft_address"),
-                stages: init_msg.stages.to_stages(),
-            }
-        );
-    }
-
-    #[test]
-    fn instantiate_pre_public_test() {
-        let mut deps = mock_dependencies();
-        let env = mock_env();
-
-        let creator_info = mock_info("creator", &[]);
-
-        let init_msg = &init_msg_pre_public();
-
-        let res = instantiate(deps.as_mut(), env.clone(), creator_info.clone(), init_msg.clone()).unwrap();
-
-        assert_eq!(
-            res.messages,
-            vec![SubMsg {
-                msg: WasmMsg::Instantiate {
-                    code_id: INSTANTIATE_BS721_CODE_ID,
-                    msg: to_binary(&Cw721InstantiateMsg {
-                        name: init_msg.name.clone(),
-                        symbol: init_msg.symbol.clone(),
-                        minter: MOCK_CONTRACT_ADDR.to_string(),
-                        uri: Some("ipfs://...".to_string()),
-                    })
-                    .unwrap(),
-                    funds: vec![],
-                    admin: Some(creator_info.sender.to_string()),
-                    label: String::from("BS721-test"),
-                }
-                .into(),
-                id: INSTANTIATE_REPLY_ID,
-                gas_limit: None,
-                reply_on: ReplyOn::Success,
-            }]
-        );
-
-        let instantiate_reply = MsgInstantiateContractResponse {
-            contract_address: "nft_address".to_string(),
-            data: vec![2u8; 32769],
-        };
-        let mut encoded_instantiate_reply =
-            Vec::<u8>::with_capacity(instantiate_reply.encoded_len());
-        instantiate_reply
-            .encode(&mut encoded_instantiate_reply)
-            .unwrap();
-
-        let reply_msg = Reply {
-            id: INSTANTIATE_REPLY_ID,
-            result: SubMsgResult::Ok(SubMsgResponse {
-                events: vec![],
-                data: Some(encoded_instantiate_reply.into()),
-            }),
-        };
-        reply(deps.as_mut(), mock_env(), reply_msg).unwrap();
-
-        let query_msg = QueryMsg::Config {};
-        let res = query(deps.as_ref(), mock_env(), query_msg.clone()).unwrap();
-        
-        let config: ConfigResponse = from_binary(&res).unwrap();
-        
-        assert_eq!(
-            config,
-            ConfigResponse {
-                admin: creator_info.sender.clone(),
-                name: init_msg.name.clone(),
-                symbol: init_msg.symbol.clone(),
-                collection_uri: init_msg.collection_uri.clone(),
-                base_token_uri: init_msg.base_token_uri.clone(),
-                seller_fee_bps: init_msg.seller_fee.clone(),
-                payment_address: None,
-                nft_address: Addr::unchecked("nft_address"),
-                stages: init_msg.stages.to_stages(),
-            }
-        );
-    }
-
-    #[test]
-    fn invalid_reply_id() {
+    fn mint_test() {
         let mut deps = mock_dependencies();
         let info = mock_info("creator", &[]);
+        let info_with_funds =  mock_info("creator", &[coin(100, "ubtsg".to_string())]);
 
-        let init_msg = &init_msg_full();
-
-        instantiate(deps.as_mut(), mock_env(), info, init_msg.clone()).unwrap();
-
-        let instantiate_reply = MsgInstantiateContractResponse {
-            contract_address: "nft_address".to_string(),
-            data: vec![2u8; 32769],
-        };
-        let mut encoded_instantiate_reply =
-            Vec::<u8>::with_capacity(instantiate_reply.encoded_len());
-        instantiate_reply
-            .encode(&mut encoded_instantiate_reply)
-            .unwrap();
-
-        let reply_msg = Reply {
-            id: 2,
-            result: SubMsgResult::Ok(SubMsgResponse {
-                events: vec![],
-                data: Some(encoded_instantiate_reply.into()),
-            }),
-        };
-
-        let err = reply(deps.as_mut(), mock_env(), reply_msg).unwrap_err();
-        match err {
-            ContractError::UnknownReplyId {  } => {},
-            e => panic!("unexpected error: {}", e),
-        }
-    }
-
-    #[test]
-    fn alreay_linked() {
-        let mut deps = mock_dependencies();
-        let info = mock_info("creator", &[]);
-
-        let init_msg = &init_msg_full();
-
-        instantiate(deps.as_mut(), mock_env(), info, init_msg.clone()).unwrap();
+        instantiate(deps.as_mut(), mock_env(), info.clone(), instantiate_msg()).unwrap();
 
         let instantiate_reply = MsgInstantiateContractResponse {
             contract_address: "nft_address".to_string(),
@@ -884,231 +525,18 @@ mod tests {
 
         reply(deps.as_mut(), mock_env(), reply_msg.clone()).unwrap();
 
-        let err = reply(deps.as_mut(), mock_env(), reply_msg).unwrap_err();
-        match err {
-            ContractError::BS721AlreadyLinked {  } => {},
-            e => panic!("unexpected error: {}", e),
-        }
-    }
-
-    #[test]
-    fn mint_full_sold_out() {
-        let mut deps = mock_dependencies();
-        let info = mock_info("creator", &[]);
-        let info_with_funds =  mock_info("creator", &[coin(100, "ubtsg".to_string())]);
-
-        let init_msg = &init_msg_full();
-
-        instantiate(deps.as_mut(), mock_env_instantiate(), info.clone(), init_msg.clone()).unwrap();
-
-        let instantiate_reply = MsgInstantiateContractResponse {
-            contract_address: "nft_address".to_string(),
-            data: vec![2u8; 32769],
+        let mint_msg = ExecuteMsg::Mint{
+            stage: 1u8,
+            proofs: None
         };
-
-        let mut encoded_instantiate_reply = Vec::<u8>::with_capacity(instantiate_reply.encoded_len());
-        instantiate_reply.encode(&mut encoded_instantiate_reply).unwrap();
-
-        let reply_msg = Reply {
-            id: INSTANTIATE_REPLY_ID,
-            result: SubMsgResult::Ok(SubMsgResponse {
-                events: vec![],
-                data: Some(encoded_instantiate_reply.into()),
-            }),
-        };
-
-        reply(deps.as_mut(), mock_env_instantiate(), reply_msg.clone()).unwrap();
-
-        let mint_msg = ExecuteMsg::Mint{};
 
         // free_mint, should mint one and fail the others
-        execute(deps.as_mut(), mock_env_free_mint(), info.clone(), mint_msg.clone()).unwrap();
-        let err = execute(deps.as_mut(), mock_env_free_mint(), info.clone(), mint_msg.clone()).unwrap_err();
-        match err {
-            ContractError::StageSoldOut {  } => {},
-            e => panic!("unexpected error: {}", e),
-        }
+        execute(deps.as_mut(), mock_env(), info_with_funds.clone(), mint_msg.clone()).unwrap();
 
-        // pre_mint, should mint two and fail the others
-        execute(deps.as_mut(), mock_env_pre_sale(), info_with_funds.clone(), mint_msg.clone()).unwrap();
-        execute(deps.as_mut(), mock_env_pre_sale(), info_with_funds.clone(), mint_msg.clone()).unwrap();
-        let err = execute(deps.as_mut(), mock_env_pre_sale(), info_with_funds.clone(), mint_msg.clone()).unwrap_err();
-        match err {
-            ContractError::StageSoldOut {  } => {},
-            e => panic!("unexpected error: {}", e),
-        }
-
-        // public_mint, should mint three and fail the others
-        execute(deps.as_mut(), mock_env_public_sale(), info_with_funds.clone(), mint_msg.clone()).unwrap();
-        execute(deps.as_mut(), mock_env_public_sale(), info_with_funds.clone(), mint_msg.clone()).unwrap();
-        execute(deps.as_mut(), mock_env_public_sale(), info_with_funds.clone(), mint_msg.clone()).unwrap();
-        let err = execute(deps.as_mut(), mock_env_public_sale(), info_with_funds, mint_msg).unwrap_err();
+        let err = execute(deps.as_mut(), mock_env(), info.clone(), mint_msg.clone()).unwrap_err();
         match err {
             ContractError::StageSoldOut {  } => {},
             e => panic!("unexpected error: {}", e),
         }
     }
-
-    #[test]
-    fn mint_full() {
-        let mut deps = mock_dependencies();
-        let info = mock_info("creator", &[]);
-        let info_with_funds =  mock_info("creator", &[coin(100, "ubtsg".to_string())]);
-
-        let init_msg = &init_msg_full();
-
-        instantiate(deps.as_mut(), mock_env_instantiate(), info.clone(), init_msg.clone()).unwrap();
-
-        let instantiate_reply = MsgInstantiateContractResponse {
-            contract_address: "nft_address".to_string(),
-            data: vec![2u8; 32769],
-        };
-
-        let mut encoded_instantiate_reply = Vec::<u8>::with_capacity(instantiate_reply.encoded_len());
-        instantiate_reply.encode(&mut encoded_instantiate_reply).unwrap();
-
-        let reply_msg = Reply {
-            id: INSTANTIATE_REPLY_ID,
-            result: SubMsgResult::Ok(SubMsgResponse {
-                events: vec![],
-                data: Some(encoded_instantiate_reply.into()),
-            }),
-        };
-
-        reply(deps.as_mut(), mock_env_instantiate(), reply_msg.clone()).unwrap();
-
-        let mint_msg = ExecuteMsg::Mint{};
-        
-        execute(deps.as_mut(), mock_env_free_mint(), info.clone(), mint_msg.clone()).unwrap();
-        execute(deps.as_mut(), mock_env_pre_sale(), info_with_funds.clone(), mint_msg.clone()).unwrap();
-        execute(deps.as_mut(), mock_env_public_sale(), info_with_funds, mint_msg).unwrap();
-    }
-
-    #[test]
-    fn mint_free_public() {
-        let mut deps = mock_dependencies();
-        let info = mock_info("creator", &[]);
-        let info_with_funds =  mock_info("creator", &[coin(100, "ubtsg".to_string())]);
-
-        let init_msg = &init_msg_free_public();
-
-        instantiate(deps.as_mut(), mock_env_instantiate(), info.clone(), init_msg.clone()).unwrap();
-
-        let instantiate_reply = MsgInstantiateContractResponse {
-            contract_address: "nft_address".to_string(),
-            data: vec![2u8; 32769],
-        };
-
-        let mut encoded_instantiate_reply = Vec::<u8>::with_capacity(instantiate_reply.encoded_len());
-        instantiate_reply.encode(&mut encoded_instantiate_reply).unwrap();
-
-        let reply_msg = Reply {
-            id: INSTANTIATE_REPLY_ID,
-            result: SubMsgResult::Ok(SubMsgResponse {
-                events: vec![],
-                data: Some(encoded_instantiate_reply.into()),
-            }),
-        };
-
-        reply(deps.as_mut(), mock_env_instantiate(), reply_msg.clone()).unwrap();
-
-        let mint_msg = ExecuteMsg::Mint{};
-        
-        execute(deps.as_mut(), mock_env_free_mint(), info.clone(), mint_msg.clone()).unwrap();
-        
-        let err = execute(deps.as_mut(), mock_env_pre_sale(), info_with_funds.clone(), mint_msg.clone()).unwrap_err();
-        match err {
-            ContractError::NoActiveStages {  } => {},
-            e => panic!("unexpected error: {}", e),
-        }
-
-        execute(deps.as_mut(), mock_env_public_sale(), info_with_funds, mint_msg).unwrap();
-    }
-
-    #[test]
-    fn mint_pre_public() {
-        let mut deps = mock_dependencies();
-        let info = mock_info("creator", &[]);
-        let info_with_funds =  mock_info("creator", &[coin(100, "ubtsg".to_string())]);
-
-        let init_msg = &init_msg_pre_public();
-
-        instantiate(deps.as_mut(), mock_env_instantiate(), info.clone(), init_msg.clone()).unwrap();
-
-        let instantiate_reply = MsgInstantiateContractResponse {
-            contract_address: "nft_address".to_string(),
-            data: vec![2u8; 32769],
-        };
-
-        let mut encoded_instantiate_reply = Vec::<u8>::with_capacity(instantiate_reply.encoded_len());
-        instantiate_reply.encode(&mut encoded_instantiate_reply).unwrap();
-
-        let reply_msg = Reply {
-            id: INSTANTIATE_REPLY_ID,
-            result: SubMsgResult::Ok(SubMsgResponse {
-                events: vec![],
-                data: Some(encoded_instantiate_reply.into()),
-            }),
-        };
-
-        reply(deps.as_mut(), mock_env_instantiate(), reply_msg.clone()).unwrap();
-
-        let mint_msg = ExecuteMsg::Mint{};
-        
-        let err = execute(deps.as_mut(), mock_env_free_mint(), info.clone(), mint_msg.clone()).unwrap_err();
-        match err {
-            ContractError::NoActiveStages {  } => {},
-            e => panic!("unexpected error: {}", e),
-        }
-        
-        execute(deps.as_mut(), mock_env_pre_sale(), info_with_funds.clone(), mint_msg.clone()).unwrap();
-
-        execute(deps.as_mut(), mock_env_public_sale(), info_with_funds, mint_msg).unwrap();
-    }
-
-    #[test]
-    fn mint_public() {
-        let mut deps = mock_dependencies();
-        let info = mock_info("creator", &[]);
-        let info_with_funds =  mock_info("creator", &[coin(100, "ubtsg".to_string())]);
-
-        let init_msg = &init_msg_public();
-
-        instantiate(deps.as_mut(), mock_env_instantiate(), info.clone(), init_msg.clone()).unwrap();
-
-        let instantiate_reply = MsgInstantiateContractResponse {
-            contract_address: "nft_address".to_string(),
-            data: vec![2u8; 32769],
-        };
-
-        let mut encoded_instantiate_reply = Vec::<u8>::with_capacity(instantiate_reply.encoded_len());
-        instantiate_reply.encode(&mut encoded_instantiate_reply).unwrap();
-
-        let reply_msg = Reply {
-            id: INSTANTIATE_REPLY_ID,
-            result: SubMsgResult::Ok(SubMsgResponse {
-                events: vec![],
-                data: Some(encoded_instantiate_reply.into()),
-            }),
-        };
-
-        reply(deps.as_mut(), mock_env_instantiate(), reply_msg.clone()).unwrap();
-
-        let mint_msg = ExecuteMsg::Mint{};
-        
-        let err = execute(deps.as_mut(), mock_env_free_mint(), info.clone(), mint_msg.clone()).unwrap_err();
-        match err {
-            ContractError::NoActiveStages {  } => {},
-            e => panic!("unexpected error: {}", e),
-        }
-        
-        let err = execute(deps.as_mut(), mock_env_pre_sale(), info_with_funds.clone(), mint_msg.clone()).unwrap_err();
-        match err {
-            ContractError::NoActiveStages {  } => {},
-            e => panic!("unexpected error: {}", e),
-        }
-
-        execute(deps.as_mut(), mock_env_public_sale(), info_with_funds, mint_msg).unwrap();
-    }
-
 }

@@ -15,17 +15,17 @@ pub enum ContractError {
     #[error("Instantiate contract error")]
     InstantiateContractError {},
 
-    #[error("InvalidUnitPrice")]
-    InvalidUnitPrice {},
+    // #[error("InvalidUnitPrice")]
+    // InvalidUnitPrice {},
 
-    #[error("InvalidNftLimit")]
-    InvalidNftLimit {},
+    // #[error("InvalidNftLimit")]
+    // InvalidNftLimit {},
 
     #[error("BS721AlreadyLinked")]
     BS721AlreadyLinked {},
 
-    #[error("MaxLimitAddressReached")]
-    MaxLimitAddressReached {},
+    // #[error("MaxLimitAddressReached")]
+    // MaxLimitAddressReached {},
 
     #[error("IncorrectPaymentAmount {0} != {1}")]
     IncorrectPaymentAmount(Coin, Coin),
@@ -33,24 +33,21 @@ pub enum ContractError {
     #[error("Basis points in seller fee cannot exceed 10000")]
     SellerFeeBasisPointsTooHigh {},
 
+    #[error("Add at least one stage")]
+    StageRequired {},
+
     #[error("Stage is sold out!")]
     StageSoldOut {},
 
-    #[error("No active stages!")]
-    NoActiveStages {},
+    #[error("Stage not found")]
+    StageNotFound {},
 
-    #[error("Start date must be greater then current time")]
-    StageStartDate {},
+    #[error("Stage not begun")]
+    StageNotBegun {},
 
-    #[error("End date must be greater then start time")]
-    StageEndDate {},
+    #[error("Start is expired")]
+    StageExpired {},
 
-    #[error("Max supply must be greater then zero")]
-    StageInvalidMaxSupply {},
-
-    #[error("Invalid stage price, must be greater then zero")]
-    StageInvalidPrice {},
-
-    #[error("Invalid date")]
-    InvalidDate {},
+    #[error("Stage invalid supply")]
+    StageInvalidSupply {},
 }
