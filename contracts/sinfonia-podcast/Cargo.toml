@@ -1,0 +1,31 @@
+[package]
+name          = "sinfonia-podcast"
+description   = "Sinfonia smart contract compatible with BS721 and CW721 specific to podcasts"
+authors       = [
+  "Angelo Recca <angelorc@users.noreply.github.com>",
+]
+version       = "0.1.0"
+edition       = "2021"
+license = "Apache-2.0"
+repository = "https://github.com/bitsongofficial/bs-nfts"
+homepage = "https://bitsong.io"
+documentation = "https://docs.bitsong.io"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[features]
+# for more explicit tests, cargo test --features=backtraces
+backtraces = ["cosmwasm-std/backtraces"]
+# use library feature to disable all instantiate/execute/query exports
+library = []
+
+[dependencies]
+cosmwasm-schema = { workspace = true }
+cosmwasm-std    = { workspace = true }
+cw2             = { workspace = true }
+cw721           = "0.16.0"
+cw721-base      = { version = "0.16.0", features = ["library"] }
+schemars        = { workspace = true }
+serde           = { workspace = true }
+cw-storage-plus = "0.16.0"

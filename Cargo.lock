@@ -64,7 +64,7 @@ dependencies = [
  "cw-storage-plus 0.15.1",
  "cw-utils 0.15.1",
  "cw2 0.15.1",
- "cw721",
+ "cw721 0.15.0",
  "schemars",
  "serde",
  "thiserror",
@@ -82,7 +82,7 @@ dependencies = [
  "cw-utils 0.15.1",
  "cw2 0.15.1",
  "cw4 0.15.1",
- "cw721",
+ "cw721 0.15.0",
  "hex",
  "prost 0.10.4",
  "rand",
@@ -457,6 +457,36 @@ dependencies = [
  "cw-utils 0.15.1",
  "schemars",
  "serde",
+]
+
+[[package]]
+name = "cw721"
+version = "0.16.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "94a1ea6e6277bdd6dfc043a9b1380697fe29d6e24b072597439523658d21d791"
+dependencies = [
+ "cosmwasm-schema",
+ "cosmwasm-std",
+ "cw-utils 0.16.0",
+ "schemars",
+ "serde",
+]
+
+[[package]]
+name = "cw721-base"
+version = "0.16.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "77518e27431d43214cff4cdfbd788a7508f68d9b1f32389e6fce513e7eaccbef"
+dependencies = [
+ "cosmwasm-schema",
+ "cosmwasm-std",
+ "cw-storage-plus 0.16.0",
+ "cw-utils 0.16.0",
+ "cw2 0.16.0",
+ "cw721 0.16.0",
+ "schemars",
+ "serde",
+ "thiserror",
 ]
 
 [[package]]
@@ -959,6 +989,20 @@ checksum = "74233d3b3b2f6d4b006dc19dee745e73e2a6bfb6f93607cd3b02bd5b00797d7c"
 dependencies = [
  "digest 0.10.5",
  "rand_core 0.6.4",
+]
+
+[[package]]
+name = "sinfonia-podcast"
+version = "0.1.0"
+dependencies = [
+ "cosmwasm-schema",
+ "cosmwasm-std",
+ "cw-storage-plus 0.16.0",
+ "cw2 0.15.1",
+ "cw721 0.16.0",
+ "cw721-base",
+ "schemars",
+ "serde",
 ]
 
 [[package]]
